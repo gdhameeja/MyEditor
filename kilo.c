@@ -7,7 +7,10 @@
 #include <unistd.h>
 #include <termios.h>
 
-
+/*** defines ***/
+// mimic how Ctrl works for ascii
+// set upper 3 bits to 0
+#define CTRL_KEY(k) ((k) &0x1f)
 
 /*** data ***/
 
@@ -19,6 +22,9 @@ struct termios orig_termios;
 /*** terminal ***/
 
 void die(const char *s) {
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
+  
   // got perror and exit from errno.h
   // exit code 1 states (non-zero) something went wrong
   // perror prints the error
@@ -54,8 +60,8 @@ void enableRawMode() {
   
   // OPOST turns off all output processing features
   // \n is converted to \r\n (terminal needs both); refer carriage return
-  
   raw.c_oflag &= ~(OPOST);
+
   // ECHO is a bitflag defined as 0100.
   // ~ (NOT) reverses the bits to 1011
   // ICANON makes the program read byte-by-byte (Canonical processing)
@@ -69,26 +75,70 @@ void enableRawMode() {
     die("tcsetattr");
 }
 
+char editorReadKey() {
+  int nread = 0;
+  char c;
+  while ((nread == read(STDIN_FILENO, &c, 1))) {
+    if (nread == -1 && errno != EAGAIN)
+      die("read");
+  }
+  return c;
+}
+
+/*** input ***/
+void editorProcessKeyPress() {
+  char c = editorReadKey();
+  switch(c) {
+  case CTRL_KEY('q'):
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+    
+    exit(0);
+    break;
+  }
+}
+
+/*** output ***/
+
+void editorDrawRows() {
+  int y;
+  for (y = 0; y < 24; y++) {
+    write(STDOUT_FILENO, "~\r\n", 3);
+  }
+}
+
+
+/*
+ * Escape sequences start with escape char (27 in ascii) 
+ * followed by [ character.
+ * Escape sequences allow terminal to do formatting tasks such as 
+ * coloring the text, moving cursor around, clearing parts of screen
+ */
+void editorRefreshScreen() {
+  // write 4 bytes to terminal
+  // first byte is x1b (escape character)
+  // other three bytes are [2J
+  // J command is erase in display (clear the screen)
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+
+  // this escape seq is 3 bytes long
+  // uses H command to position the cursor
+  write(STDOUT_FILENO, "\x1b[H", 3);
+
+  editorDrawRows();
+
+  write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
 
 /*** init ***/
 
 int main() {
   enableRawMode();
-  
+
   while (1) {
-    char c = '\0';
-    if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN)
-      die("read");
-    // exits immediately as ICANON flag is set
-    if (c == 'q') {
-      break;
-    } else if (iscntrl(c)) {
-      // iscntrl tells is a char is control char (ascii 0-31)
-      // control chars are non-printable
-      printf("%d\r\n", c);
-    } else {
-      printf("%d ('%c')\r\n", c, c);
-    }
+    editorRefreshScreen();
+    editorProcessKeyPress();
   }
   return 0;
 }

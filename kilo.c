@@ -7,17 +7,21 @@
 #include <unistd.h>
 #include <termios.h>
 
-// original termial attributes
-// needs to be saved in order to set the terminal's original attrs
-// when the program exits
+
 
 /*** data ***/
 
+// original termial attributes
+// needs to be saved in order to set the terminal's original attrs
+// when the program exits
 struct termios orig_termios;
 
 /*** terminal ***/
 
 void die(const char *s) {
+  // got perror and exit from errno.h
+  // exit code 1 states (non-zero) something went wrong
+  // perror prints the error
   perror(s);
   exit(1);
 }
